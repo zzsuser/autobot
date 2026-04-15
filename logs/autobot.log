@@ -1,0 +1,40 @@
+2026-04-13 11:55:01 [INFO] autobot - DBReader 连接已关闭
+2026-04-13 11:55:01 [INFO] autobot - 策略已注册: supertrend_tema
+2026-04-13 11:55:01 [WARNING] autobot - okx SDK未安装，交易功能不可用
+2026-04-13 11:55:01 [INFO] autobot - 清除仓位: __test__:TEST-USDT:test_strategy
+2026-04-13 11:55:01 [INFO] autobot - 保存仓位: pos=1, price=2000.5, dir=long
+2026-04-13 11:55:01 [INFO] autobot - 清除仓位: __test__:TEST-USDT:test_strategy
+2026-04-13 11:55:01 [INFO] autobot - DBReader 连接已关闭
+2026-04-13 11:55:58 [INFO] autobot - DBReader 连接已关闭
+2026-04-13 11:55:58 [INFO] autobot - 策略已注册: supertrend_tema
+2026-04-13 11:55:59 [WARNING] autobot - okx SDK未安装，交易功能不可用
+2026-04-13 11:55:59 [INFO] autobot - 清除仓位: __test__:TEST-USDT:test_strategy
+2026-04-13 11:55:59 [INFO] autobot - 保存仓位: pos=1, price=2000.5, dir=long
+2026-04-13 11:55:59 [INFO] autobot - 清除仓位: __test__:TEST-USDT:test_strategy
+2026-04-13 11:55:59 [INFO] autobot - DBReader 连接已关闭
+2026-04-13 12:00:53 [INFO] autobot - DBReader 连接已关闭
+2026-04-13 12:00:53 [INFO] autobot - 策略已注册: supertrend_tema
+2026-04-13 12:00:53 [WARNING] autobot - okx SDK未安装，交易功能不可用
+2026-04-13 12:00:53 [INFO] autobot - 清除仓位: __test__:TEST-USDT:test_strategy
+2026-04-13 12:00:53 [INFO] autobot - 保存仓位: pos=1, price=2000.5, dir=long
+2026-04-13 12:00:53 [INFO] autobot - 清除仓位: __test__:TEST-USDT:test_strategy
+2026-04-13 12:00:53 [INFO] autobot - DBReader 连接已关闭
+2026-04-13 12:00:54 [INFO] autobot - 添加任务: 99/test/TEST-USDT/supertrend_tema
+2026-04-13 12:00:54 [INFO] autobot - 任务已保存到Redis
+2026-04-13 12:00:54 [INFO] autobot - 启动 1 个新任务
+2026-04-13 12:00:54 [INFO] autobot - 任务开始: test-TEST-USDT-supertrend_tema (99min)
+2026-04-13 12:00:54 [INFO] autobot - 执行交易任务: test/TEST-USDT/99min/supertrend_tema
+2026-04-13 12:00:54 [INFO] autobot - 任务已添加并启动: 99:test:TEST-USDT:supertrend_tema
+2026-04-13 12:00:54 [ERROR] autobot - 未找到: symbol=TESTUSDT 或 interval=5min
+2026-04-13 12:00:54 [INFO] autobot - 移除任务: 99/test/TEST-USDT/supertrend_tema
+2026-04-13 12:00:54 [INFO] autobot - 任务已保存到Redis
+2026-04-13 12:00:54 [INFO] autobot - 任务已移除: 99:test:TEST-USDT:supertrend_tema
+2026-04-15 05:17:27 [INFO] autobot - 策略已注册: supertrend_tema
+2026-04-15 05:17:27 [INFO] autobot - 已注册策略: ['supertrend_tema']
+2026-04-15 05:17:27 [INFO] autobot - 加载任务成功: {}
+2026-04-15 05:17:27 [INFO] autobot - 任务调度器启动
+2026-04-15 05:21:16 [INFO] autobot - 任务已保存到Redis
+2026-04-15 05:21:16 [INFO] autobot - 停止任务调度中...
+2026-04-15 05:21:16 [INFO] autobot - 所有任务已停止
+2026-04-15 05:21:16 [INFO] autobot - 调度器接收到取消信号
+2026-04-15 05:21:16 [INFO] autobot - 调度器已停止
