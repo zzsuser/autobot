@@ -18,18 +18,7 @@ class TradingEngine:
         self.trader = OKXTrader()
 
     def execute(self, exchange: str, symbol: str, timeframe: str, method: str) -> tuple:
-        """
-        执行一次交易任务
-
-        Args:
-            exchange: 交易所
-            symbol: 交易对 (如 ETH-USDT-SWAP)
-            timeframe: 时间周期 (分钟数字符串，如 '5')
-            method: 策略名称
-
-        Returns:
-            (bool, str): (是否成功, 消息)
-        """
+        """执行一次交易任务"""
         logger.info(f"执行交易任务: {exchange}/{symbol}/{timeframe}min/{method}")
 
         # 1. 获取策略
@@ -41,17 +30,192 @@ class TradingEngine:
         pos_info = position_manager.get_position(exchange, symbol, method)
         logger.debug(f"当前仓位: {pos_info.to_dict()}")
 
-        # 3. 判断当前是否在周期边界
-        now = datetime.now() - timedelta(hours=8)  # 时区调整
+        # ===== 新增: 检查是否需要用多方向信号模式 =====
+        # 如果策略实现了 generate_multi_signal 且是对冲类策略，使用双向模式
+        use_multi = hasattr(strategy, 'generate_multi_signal') and method == "hedge_liquidation"
+
+        if use_multi:
+            # 双向模式：先检查爆仓联动，再处理信号
+            return self._handle_multi_signal(strategy, exchange, symbol, timeframe, method, pos_info)
+
+        # 3. 原有逻辑: 判断当前是否在周期边界
+        now = datetime.now() - timedelta(hours=8)
         tf_minutes = int(timeframe)
         is_signal_time = now.minute % tf_minutes == 0
 
         if not is_signal_time:
-            # 非信号时间：仅执行止盈止损
             return self._handle_stop_check(strategy, exchange, symbol, method, pos_info)
 
-        # 4. 信号时间：获取数据并生成信号（传入 timeframe）
         return self._handle_signal(strategy, exchange, symbol, timeframe, method, pos_info)
+
+    # ===== 新增方法: 双向信号处理 =====
+    def _handle_multi_signal(
+        self, strategy, exchange, symbol, timeframe, method, pos_info: PositionInfo
+    ) -> tuple:
+        """
+        处理双向策略信号（如对冲策略）
+
+        1. 先同步交易所实际仓位，检测爆仓
+        2. 调用 generate_multi_signal 获取多空两个方向的信号
+        3. 分别执行
+        """
+        # 1. 检查交易所实际仓位，与本地记录对比，检测爆仓
+        inst_id = symbol if "-" in symbol else symbol.replace("USDT", "-USDT-SWAP")
+        exchange_positions = self.trader.get_position_detail(inst_id)
+
+        local_has_long = pos_info.has_long()
+        local_has_short = pos_info.has_short()
+
+        # 交易所实际是否有仓位
+        exchange_has_long = exchange_positions.get("long") is not None
+        exchange_has_short = exchange_positions.get("short") is not None
+
+        # 爆仓检测: 本地有记录但交易所已无仓位
+        if local_has_long and not exchange_has_long:
+            logger.warning(f"[爆仓检测] 多仓已消失（爆仓）: {symbol}")
+            position_manager.mark_liquidated(exchange, symbol, method, "long")
+            local_has_long = False
+
+        if local_has_short and not exchange_has_short:
+            logger.warning(f"[爆仓检测] 空仓已消失（爆仓）: {symbol}")
+            position_manager.mark_liquidated(exchange, symbol, method, "short")
+            local_has_short = False
+
+        # 2. ��取K线数据（对冲策略可能不需要，但保持兼容）
+        data_length = strategy.required_data_length
+        db_symbol = symbol.replace("-USDT-SWAP", "USDT").replace("-USDT", "USDT")
+        interval_map = {"1": "1min", "5": "5min", "15": "15min", "60": "1h"}
+        db_interval = interval_map.get(timeframe, "5min")
+        df = self.db_reader.get_data(db_symbol, db_interval, limit=data_length)
+        if df is None or df.empty:
+            # 对冲策略可以不依赖K线，创建一个空DataFrame
+            import pandas as pd
+            df = pd.DataFrame()
+
+        # 3. 调用双向信号生成
+        multi_signal = strategy.generate_multi_signal(
+            df=df,
+            has_long=local_has_long,
+            has_short=local_has_short,
+            long_entry_price=pos_info.long.entry_price if local_has_long else 0,
+            long_entry_index=pos_info.long.entry_index if local_has_long else None,
+            short_entry_price=pos_info.short.entry_price if local_has_short else 0,
+            short_entry_index=pos_info.short.entry_index if local_has_short else None,
+        )
+
+        logger.info(f"双向信号: {multi_signal}")
+
+        messages = []
+
+        # 4. 执行多仓信号
+        if multi_signal.has_long_action:
+            sig = multi_signal.long_signal
+            if sig.signal == SignalResult.LONG:
+                ok, msg = self._execute_open_isolated(exchange, symbol, method, "long")
+                messages.append(f"[多仓] {msg}")
+            elif sig.signal == SignalResult.CLOSE_LONG:
+                ok, msg = self._execute_close_direction(exchange, symbol, method, "long")
+                messages.append(f"[平多] {msg}")
+
+        # 5. 执行空仓信号
+        if multi_signal.has_short_action:
+            sig = multi_signal.short_signal
+            if sig.signal == SignalResult.SHORT:
+                ok, msg = self._execute_open_isolated(exchange, symbol, method, "short")
+                messages.append(f"[空仓] {msg}")
+            elif sig.signal == SignalResult.CLOSE_SHORT:
+                ok, msg = self._execute_close_direction(exchange, symbol, method, "short")
+                messages.append(f"[平空] {msg}")
+
+        if messages:
+            return True, " | ".join(messages)
+        return False, "双向策略：无操作"
+
+    def _execute_open_isolated(
+        self, exchange: str, symbol: str, method: str, direction: str
+    ) -> tuple:
+        """
+        逐仓模式开仓（对冲策略专用）
+        使用总账户余额的 POSITION_PERCENT（如1%）作为保证金
+        """
+        side = "buy" if direction == "long" else "sell"
+        inst_id = symbol if "-" in symbol else symbol.replace("USDT", "-USDT-SWAP")
+
+        # 获取账户总余额
+        total_balance = self.trader.get_usdt_balance()
+        if total_balance <= 0:
+            return False, "获取账户余额失败"
+
+        # 获取当前价格
+        current_price = self.trader.get_current_price(symbol)
+        if current_price <= 0:
+            return False, "获取当前价格失败"
+
+        logger.info(
+            f"逐仓开仓: direction={direction}, balance={total_balance}, "
+            f"percent={TradingConfig.POSITION_PERCENT}, price={current_price}"
+        )
+
+        # 执行开仓（逐仓模式）
+        result = self.trader.open_position(
+            side=side,
+            pos_side=direction,
+            current_price=current_price,
+            balance=total_balance,                   # 传入总余额
+            leverage=TradingConfig.DEFAULT_LEVERAGE,
+            margin_mode="isolated",                  # 强制逐仓
+            position_percent=TradingConfig.POSITION_PERCENT,  # 使用百分比
+            inst_id=inst_id,
+        )
+
+        if result.get("success"):
+            contracts = result.get("contracts", 0)
+            position_manager.save_position(
+                exchange=exchange,
+                symbol=symbol,
+                method=method,
+                direction=direction,
+                price=current_price,
+                size=contracts,
+                margin_mode="isolated",
+                leverage=TradingConfig.DEFAULT_LEVERAGE,
+            )
+            return True, f"开{direction}成功 @ {current_price}, {contracts}张"
+        else:
+            return False, f"开{direction}失败: {result.get('message', '未知错误')}"
+
+    def _execute_close_direction(
+        self, exchange: str, symbol: str, method: str, direction: str
+    ) -> tuple:
+        """平掉指定方向的仓位"""
+        inst_id = symbol if "-" in symbol else symbol.replace("USDT", "-USDT-SWAP")
+
+        # 获取当前价格用于记录
+        current_price = self.trader.get_current_price(symbol)
+
+        result = self.trader.close_position(
+            pos_side=direction,
+            margin_mode="isolated",
+            inst_id=inst_id,
+        )
+
+        if result.get("success"):
+            position_manager.clear_position(
+                exchange, symbol, method,
+                direction=direction,
+                close_price=current_price,
+                reason="爆仓联动平仓"
+            )
+            return True, f"平{direction}成功 @ {current_price}"
+        else:
+            # 可能交易所也已无仓位，直接清记录
+            position_manager.clear_position(
+                exchange, symbol, method,
+                direction=direction,
+                close_price=current_price,
+                reason="平仓失败但清除记录"
+            )
+            return False, f"平{direction}失败: {result.get('message', '')}"
 
     def _handle_stop_check(
         self, strategy, exchange, symbol, method, pos_info: PositionInfo
@@ -200,13 +364,13 @@ class TradingEngine:
         position_manager.clear_position(exchange, symbol, method)
 
         return True, f"平{pos_side}成功"
-
-    def force_close(self, exchange: str, symbol: str, method: str) -> tuple:
-        """强制清仓（API调用）"""
+    def force_close(self, exchange: str, symbol: str, method: str, direction: str = None) -> tuple:
+        """强制清仓"""
+        if direction:
+            return self._execute_close_direction(exchange, symbol, method, direction)
         pos_info = position_manager.get_position(exchange, symbol, method)
         if not pos_info.has_position():
             return False, "无仓位可平"
-
         return self._execute_close(exchange, symbol, method, pos_info)
 
 

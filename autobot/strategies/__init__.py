@@ -23,3 +23,7 @@ def register_all_strategies():
         strategy_registry.register(ZZSStrategy())
     except ImportError:
         pass  # 如果predict模块不可用则跳过
+
+    # ===== 新增: 双向对冲 + 爆仓联动平仓策略 =====
+    from autobot.strategies.hedge_liquidation_strategy import HedgeLiquidationStrategy
+    strategy_registry.register(HedgeLiquidationStrategy())

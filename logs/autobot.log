@@ -38,3 +38,80 @@
 2026-04-15 05:21:16 [INFO] autobot - 所有任务已停止
 2026-04-15 05:21:16 [INFO] autobot - 调度器接收到取消信号
 2026-04-15 05:21:16 [INFO] autobot - 调度器已停止
+2026-04-15 06:43:25 [INFO] autobot - 策略已注册: supertrend_tema
+2026-04-15 06:43:25 [INFO] autobot - 策略已注册: hedge_liquidation
+2026-04-15 06:43:25 [INFO] autobot - 已注册策略: ['supertrend_tema', 'hedge_liquidation']
+2026-04-15 06:43:25 [INFO] autobot - 加载任务成功: {}
+2026-04-15 06:43:25 [INFO] autobot - 任务调度器启动
+2026-04-15 06:43:56 [INFO] autobot - 添加任务: 5/okx/BTC-USDT-SWAP/hedge_liquidation
+2026-04-15 06:43:56 [INFO] autobot - 任务已保存到Redis
+2026-04-15 06:43:56 [INFO] autobot - 启动 1 个新任务
+2026-04-15 06:43:56 [INFO] autobot - 任务开始: okx-BTC-USDT-SWAP-hedge_liquidation (5min)
+2026-04-15 06:43:56 [INFO] autobot - 执行交易任务: okx/BTC-USDT-SWAP/5min/hedge_liquidation
+2026-04-15 06:43:56 [INFO] autobot - 任务已添加并启动: 5:okx:BTC-USDT-SWAP:hedge_liquidation
+2026-04-15 06:43:56 [INFO] autobot - [hedge_liquidation] 无仓位，准备双向开仓
+2026-04-15 06:43:56 [INFO] autobot - 双向信号: MultiSignalResult(long=SignalResult(signal=LONG, reason=对冲策略：同时开多), short=SignalResult(signal=SHORT, reason=对冲策略：同时开空))
+2026-04-15 06:43:56 [INFO] autobot - 逐仓开仓: direction=long, balance=9.99466805, percent=0.01, price=74193.4
+2026-04-15 06:43:56 [INFO] autobot - 仓位计算: mode=isolated, balance=9.99466805, use_amount=0.0999, leverage=100x, price=74193.4, contracts=0.0
+2026-04-15 06:43:56 [INFO] autobot - 逐仓开仓: direction=short, balance=9.99466805, percent=0.01, price=74193.4
+2026-04-15 06:43:56 [INFO] autobot - 仓位计算: mode=isolated, balance=9.99466805, use_amount=0.0999, leverage=100x, price=74193.4, contracts=0.0
+2026-04-15 06:43:56 [INFO] autobot - [okx:BTC-USDT-SWAP:hedge_liquidation] 执行成功: [多仓] 开long失败: 合约张数过小: 0.0 | [空仓] 开short失败: 合约张数过小: 0.0
+2026-04-15 06:43:56 [INFO] autobot - 执行交易任务: okx/BTC-USDT-SWAP/5min/hedge_liquidation
+2026-04-15 06:43:56 [INFO] autobot - [hedge_liquidation] 无仓位，准备双向开仓
+2026-04-15 06:43:56 [INFO] autobot - 双向信号: MultiSignalResult(long=SignalResult(signal=LONG, reason=对冲策略：同时开多), short=SignalResult(signal=SHORT, reason=对冲策略：同时开空))
+2026-04-15 06:43:56 [INFO] autobot - 逐仓开仓: direction=long, balance=9.99466805, percent=0.01, price=74193.4
+2026-04-15 06:43:56 [INFO] autobot - 仓位计算: mode=isolated, balance=9.99466805, use_amount=0.0999, leverage=100x, price=74193.4, contracts=0.0
+2026-04-15 06:43:56 [INFO] autobot - 逐仓开仓: direction=short, balance=9.99466805, percent=0.01, price=74193.4
+2026-04-15 06:43:56 [INFO] autobot - 仓位计算: mode=isolated, balance=9.99466805, use_amount=0.0999, leverage=100x, price=74193.4, contracts=0.0
+2026-04-15 06:43:56 [INFO] autobot - [okx:BTC-USDT-SWAP:hedge_liquidation] 执行成功: [多仓] 开long失败: 合约张数过小: 0.0 | [空仓] 开short失败: 合约张数过小: 0.0
+2026-04-15 06:44:06 [INFO] autobot - 任务已保存到Redis
+2026-04-15 06:44:06 [INFO] autobot - 停止任务调度中...
+2026-04-15 06:44:06 [INFO] autobot - 任务被取消: okx-BTC-USDT-SWAP-hedge_liquidation
+2026-04-15 06:44:06 [INFO] autobot - 任务停止: okx-BTC-USDT-SWAP-hedge_liquidation
+2026-04-15 06:44:06 [INFO] autobot - 调度器接收到取消信号
+2026-04-15 06:44:06 [INFO] autobot - 调度器已停止
+2026-04-15 06:44:06 [INFO] autobot - 所有任务已停止
+2026-04-15 06:44:09 [INFO] autobot - 策略已注册: supertrend_tema
+2026-04-15 06:44:09 [INFO] autobot - 策略已注册: hedge_liquidation
+2026-04-15 06:44:09 [INFO] autobot - 已注册策略: ['supertrend_tema', 'hedge_liquidation']
+2026-04-15 06:44:09 [INFO] autobot - 加载任务成功: {'5': {'okx': {'BTC-USDT-SWAP': {'hedge_liquidation': 1}}}}
+2026-04-15 06:44:09 [INFO] autobot - 任务调度器启动
+2026-04-15 06:44:22 [INFO] autobot - 移除任务: 1/okx/BTC-USDT-SWAP/hedge_liquidation
+2026-04-15 06:44:22 [WARNING] autobot - 任务不存在，无法移除: 1/okx/BTC-USDT-SWAP/hedge_liquidation
+2026-04-15 06:44:27 [INFO] autobot - 任务已保存到Redis
+2026-04-15 06:44:27 [INFO] autobot - 停止任务调度中...
+2026-04-15 06:44:27 [INFO] autobot - 所有任务已停止
+2026-04-15 06:44:27 [INFO] autobot - 调度器接收到取消信号
+2026-04-15 06:44:27 [INFO] autobot - 调度器已停止
+2026-04-15 06:44:48 [INFO] autobot - 策略已注册: supertrend_tema
+2026-04-15 06:44:48 [INFO] autobot - 策略已注册: hedge_liquidation
+2026-04-15 06:44:48 [INFO] autobot - 已注册策略: ['supertrend_tema', 'hedge_liquidation']
+2026-04-15 06:44:48 [INFO] autobot - 加载任务成功: {'5': {'okx': {'BTC-USDT-SWAP': {'hedge_liquidation': 1}}}}
+2026-04-15 06:44:48 [INFO] autobot - 任务调度器启动
+2026-04-15 06:44:55 [INFO] autobot - 添加任务: 5/okx/BTC-USDT-SWAP/hedge_liquidation
+2026-04-15 06:44:55 [INFO] autobot - 任务已存在，无需重复添加: 5:okx:BTC-USDT-SWAP:hedge_liquidation
+2026-04-15 06:45:00 [INFO] autobot - 启动 1 个新任务
+2026-04-15 06:45:00 [INFO] autobot - 任务开始: okx-BTC-USDT-SWAP-hedge_liquidation (5min)
+2026-04-15 06:45:00 [INFO] autobot - 执行交易任务: okx/BTC-USDT-SWAP/5min/hedge_liquidation
+2026-04-15 06:45:00 [INFO] autobot - [hedge_liquidation] 无仓位，准备双向开仓
+2026-04-15 06:45:00 [INFO] autobot - 双向信号: MultiSignalResult(long=SignalResult(signal=LONG, reason=对冲策略：同时开多), short=SignalResult(signal=SHORT, reason=对冲策略：同时开空))
+2026-04-15 06:45:00 [INFO] autobot - 逐仓开仓: direction=long, balance=9.99466805, percent=0.01, price=74181.6
+2026-04-15 06:45:00 [INFO] autobot - 仓位计算: mode=isolated, balance=9.99466805, use_amount=0.0999, leverage=100x, price=74181.6, contracts=0.0
+2026-04-15 06:45:00 [INFO] autobot - 逐仓开仓: direction=short, balance=9.99466805, percent=0.01, price=74181.6
+2026-04-15 06:45:00 [INFO] autobot - 仓位计算: mode=isolated, balance=9.99466805, use_amount=0.0999, leverage=100x, price=74181.6, contracts=0.0
+2026-04-15 06:45:00 [INFO] autobot - [okx:BTC-USDT-SWAP:hedge_liquidation] 执行成功: [多仓] 开long失败: 合约张数过小: 0.0 | [空仓] 开short失败: 合约张数过小: 0.0
+2026-04-15 06:45:00 [INFO] autobot - 执行交易任务: okx/BTC-USDT-SWAP/5min/hedge_liquidation
+2026-04-15 06:45:00 [INFO] autobot - [hedge_liquidation] 无仓位，准备双向开仓
+2026-04-15 06:45:00 [INFO] autobot - 双向信号: MultiSignalResult(long=SignalResult(signal=LONG, reason=对冲策略：同时开多), short=SignalResult(signal=SHORT, reason=对冲策略：同时开空))
+2026-04-15 06:45:00 [INFO] autobot - 逐仓开仓: direction=long, balance=9.99466805, percent=0.01, price=74181.6
+2026-04-15 06:45:00 [INFO] autobot - 仓位计算: mode=isolated, balance=9.99466805, use_amount=0.0999, leverage=100x, price=74181.6, contracts=0.0
+2026-04-15 06:45:00 [INFO] autobot - 逐仓开仓: direction=short, balance=9.99466805, percent=0.01, price=74181.6
+2026-04-15 06:45:00 [INFO] autobot - 仓位计算: mode=isolated, balance=9.99466805, use_amount=0.0999, leverage=100x, price=74181.6, contracts=0.0
+2026-04-15 06:45:00 [INFO] autobot - [okx:BTC-USDT-SWAP:hedge_liquidation] 执行成功: [多仓] 开long失败: 合约张数过小: 0.0 | [空仓] 开short失败: 合约张数过小: 0.0
+2026-04-15 06:47:07 [INFO] autobot - 移除任务: 1/okx/BTC-USDT-SWAP/hedge_liquidation
+2026-04-15 06:47:07 [WARNING] autobot - 任务不存在，无法移除: 1/okx/BTC-USDT-SWAP/hedge_liquidation
+2026-04-15 06:47:29 [INFO] autobot - 移除任务: 5/okx/BTC-USDT-SWAP/hedge_liquidation
+2026-04-15 06:47:29 [INFO] autobot - 任务被取消: okx-BTC-USDT-SWAP-hedge_liquidation
+2026-04-15 06:47:29 [INFO] autobot - 任务停止: okx-BTC-USDT-SWAP-hedge_liquidation
+2026-04-15 06:47:29 [INFO] autobot - 任务已保存到Redis
+2026-04-15 06:47:29 [INFO] autobot - 任务已移除: 5:okx:BTC-USDT-SWAP:hedge_liquidation
