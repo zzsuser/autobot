@@ -345,11 +345,15 @@ def run_trading_test(inst_id: str = "ETH-USDT-SWAP", dry_run: bool = False):
         _print_summary()
         return
 
+    # 查询最小下单张数，后续开仓复用
+    min_size = tester.get_min_size()
+    print_info(f"最小下单张数: {min_size}")
+
     # ---- Step 4: 开多仓 ----
-    print_step(4, "开多仓（市价，1张合约）")
+    print_step(4, "开多仓（市价，最小张数）")
     long_order_id = None
     try:
-        result = tester.open_position(side="buy", pos_side="long", size="0.01")
+        result = tester.open_position(side="buy", pos_side="long", size=min_size)
         success = result.get("code") == "0"
         if success:
             long_order_id = result["data"][0].get("ordId", "")
@@ -425,10 +429,10 @@ def run_trading_test(inst_id: str = "ETH-USDT-SWAP", dry_run: bool = False):
     wait(1, "准备开空仓")
 
     # ---- Step 8: 开空仓 ----
-    print_step(8, "开空仓（市价，1张合约）")
+    print_step(8, "开空仓（市价，最小张数）")
     short_order_id = None
     try:
-        result = tester.open_position(side="sell", pos_side="short", size="0.01")
+        result = tester.open_position(side="sell", pos_side="short", size=min_size)
         success = result.get("code") == "0"
         if success:
             short_order_id = result["data"][0].get("ordId", "")

@@ -170,7 +170,8 @@ class OKXTrader:
         margin_mode = margin_mode or TradingConfig.MARGIN_MODE
         position_percent = position_percent if position_percent is not None else TradingConfig.POSITION_PERCENT
 
-        contract_size = TradingConfig.CONTRACT_SIZE
+        #contract_size = TradingConfig.CONTRACT_SIZE
+        contract_size = self.get_contract_value(inst_id)
 
         if margin_mode == "isolated":
             # 逐仓: 使用总账户余额 * 仓位百分比
@@ -181,7 +182,9 @@ class OKXTrader:
 
         total_value = use_amount * leverage
         qty = total_value / current_price
-        contracts = round(qty / contract_size, 2)
+        #contracts = round(qty / contract_size, 2)
+        min_size = int(self.get_min_size(inst_id))
+        contracts = max(int(qty / contract_size), min_size)
 
         logger.info(
             f"仓位计算: mode={margin_mode}, balance={balance}, "
@@ -235,7 +238,7 @@ class OKXTrader:
                 inst_id=inst_id,
             )
 
-            if contracts < 0.01:
+            if contracts < 1:
                 return {"success": False, "message": f"合约张数过小: {contracts}", "contracts": contracts}
 
             logger.info(f"开仓: {side}/{pos_side}, {contracts}张 @ {current_price}, mode={margin_mode}")

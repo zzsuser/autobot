@@ -115,3 +115,8 @@
 2026-04-15 06:47:29 [INFO] autobot - 任务停止: okx-BTC-USDT-SWAP-hedge_liquidation
 2026-04-15 06:47:29 [INFO] autobot - 任务已保存到Redis
 2026-04-15 06:47:29 [INFO] autobot - 任务已移除: 5:okx:BTC-USDT-SWAP:hedge_liquidation
+2026-04-15 06:48:42 [INFO] autobot - 任务已保存到Redis
+2026-04-15 06:48:42 [INFO] autobot - 停止任务调度中...
+2026-04-15 06:48:42 [INFO] autobot - 所有任务已停止
+2026-04-15 06:48:42 [INFO] autobot - 调度器接收到取消信号
+2026-04-15 06:48:42 [INFO] autobot - 调度器已停止
