@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 from autobot.config import OKXConfig, TradingConfig
 from autobot.utils.logger import logger
+import math
 
 try:
     import okx.Trade as Trade
@@ -184,7 +185,10 @@ class OKXTrader:
         qty = total_value / current_price
         #contracts = round(qty / contract_size, 2)
         min_size = int(self.get_min_size(inst_id))
-        contracts = max(int(qty / contract_size), min_size)
+        raw_contracts = qty / contract_size
+        contracts = max(math.ceil(raw_contracts) if raw_contracts >= 0.01 else 0, min_size)
+
+        #contracts = max(int(qty / contract_size), min_size)
 
         logger.info(
             f"仓位计算: mode={margin_mode}, balance={balance}, "

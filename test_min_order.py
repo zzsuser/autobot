@@ -9,7 +9,7 @@ OKX 永续合约最小开仓信息查询
 """
 import sys
 import requests
-
+import math
 
 # 查询的合约列表
 CONTRACTS = ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
@@ -57,19 +57,21 @@ def print_contract_info(inst_id: str):
     # 计算 1 张合约的价值（USDT）
     value_per_contract = price * ct_val
 
+    # 修复: 使用 math.ceil 确保最小张数至少为1
+    actual_min = max(1, math.ceil(min_sz))
+
     # 不同杠杆下的最小保证金
-    margin_100x = value_per_contract * min_sz / 100
-    margin_10x = value_per_contract * min_sz / 10
-    margin_5x = value_per_contract * min_sz / 5
+    margin_100x = value_per_contract * actual_min / 100
+    margin_10x = value_per_contract * actual_min / 10
+    margin_5x = value_per_contract * actual_min / 5
 
     print(f"  当前价格:        ${price:>12,.2f}")
     print(f"  合约面值(ctVal):  {ct_val} {ct_ccy}")
-    print(f"  最小张数(minSz):  {int(min_sz)}")
+    print(f"  最小张数(minSz):  {actual_min}  (API原始值: {min_sz})")
     print(f"  1张价值:          ${value_per_contract:>10,.2f}")
     print(f"  最小保证金(100x): ${margin_100x:>10,.2f}")
     print(f"  最小保证金(10x):  ${margin_10x:>10,.2f}")
     print(f"  最小保证金(5x):   ${margin_5x:>10,.2f}")
-
 
 def main():
     print("\n" + "=" * 50)
