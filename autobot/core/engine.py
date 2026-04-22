@@ -39,9 +39,10 @@ class TradingEngine:
             return self._handle_multi_signal(strategy, exchange, symbol, timeframe, method, pos_info)
 
         # 3. 原有逻辑: 判断当前是否在周期边界
-        now = datetime.now() - timedelta(hours=8)
+        now = datetime.now() #- timedelta(hours=8)
         tf_minutes = int(timeframe)
-        is_signal_time = now.minute % tf_minutes == 0
+        is_signal_time = now.minute % tf_minutes == 0 or (now.second <= 3)
+        logger.warning(f"[时间检查] now={now}, minute={now.minute}, tf={tf_minutes}, is_signal_time={is_signal_time}")
 
         if not is_signal_time:
             return self._handle_stop_check(strategy, exchange, symbol, method, pos_info)
@@ -321,7 +322,7 @@ class TradingEngine:
                 logger.info(f"反向开仓：先平掉当前 {pos_info.direction} 仓位")
                 close_pos_side = "long" if pos_info.position == 1 else "short"
                 self.trader.close_position(pos_side=close_pos_side)
-                self.trader.update_balance(TradingConfig.DEFAULT_BALANCE)
+                #  删除 update_balance 调用，让账户自然累积
                 position_manager.clear_position(exchange, symbol, method)
                 time.sleep(0.5)
             elif (direction == "long" and pos_info.position == 1) or \
@@ -333,12 +334,19 @@ class TradingEngine:
         if current_price <= 0:
             return False, "获取当前价格失败"
 
+        # 实时读取账户余额（USDT 可用）
+        live_balance = self.trader.get_usdt_balance()
+        if live_balance <= 0:
+            logger.error(f"账户USDT余额为0或获取失败，跳过开仓")
+            return False, "账户余额不足"
+        logger.info(f"当前账户USDT可用余额: {live_balance:.4f}")
+
         # 执行开仓
         result = self.trader.open_position(
             side=side,
             pos_side=pos_side,
             current_price=current_price,
-            balance=TradingConfig.DEFAULT_BALANCE,
+            balance=live_balance,                          # 用实时余额代替 DEFAULT_BALANCE
             leverage=TradingConfig.DEFAULT_LEVERAGE,
             ratio=TradingConfig.DEFAULT_RATIO,
         )
@@ -349,7 +357,7 @@ class TradingEngine:
             position_manager.save_position(
                 exchange, symbol, method, position_val, current_price, direction, entry_index
             )
-            return True, f"开{direction}成功 @ {current_price}"
+            return True, f"开{direction}成功 @ {current_price} (本金={live_balance:.2f})"
         else:
             return False, f"开仓失败: {result.get('message', '未知错误')}"
 
@@ -360,10 +368,11 @@ class TradingEngine:
 
         pos_side = "long" if pos_info.position == 1 else "short"
         result = self.trader.close_position(pos_side=pos_side)
-        self.trader.update_balance(TradingConfig.DEFAULT_BALANCE)
+        # 删除 self.trader.update_balance(...) ——让盈亏自然留在账户里
         position_manager.clear_position(exchange, symbol, method)
 
         return True, f"平{pos_side}成功"
+
     def force_close(self, exchange: str, symbol: str, method: str, direction: str = None) -> tuple:
         """强制清仓"""
         if direction:

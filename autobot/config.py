@@ -103,7 +103,7 @@ class OKXConfig:
 class TradingConfig:
     DEFAULT_LEVERAGE = int(os.getenv("DEFAULT_LEVERAGE", "100"))
     DEFAULT_RATIO = float(os.getenv("DEFAULT_RATIO", "0.03"))
-    DEFAULT_BALANCE = float(os.getenv("DEFAULT_BALANCE", "5"))
+    DEFAULT_BALANCE = float(os.getenv("DEFAULT_BALANCE", "50"))
     CONTRACT_SIZE = float(os.getenv("CONTRACT_SIZE", "0.1"))
     DEFAULT_INST_ID = os.getenv("DEFAULT_INST_ID", "ETH-USDT-SWAP")
     STOP_PROFIT_PCT = float(os.getenv("STOP_PROFIT_PCT", "0.02"))

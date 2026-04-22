@@ -122,21 +122,22 @@ class SuperTrendTemaStrategy(StrategyBase):
         bar_minutes:         单根K线分钟数，用于冷却时间换算 (默认5)
         is_strong_threshold: 趋势强度阈值 (默认0.4，原回测/旧版为0.6)
     """
-
     def __init__(
         self,
         st_period: int = 10,
         st_multiplier: float = 3.0,
-        liquidation_ratio: float = 0.03,
+        liquidation_ratio: float = 0.025,        # ✅ 0.03 → 0.025
         fixed_take_profit: float = 0.025,
         trend_weak_profit: float = 0.01,
         st_change_profit: float = 0.005,
+        big_take_profit: float = 0.04,           # ✅ 新增：P2a 大止盈阈值
         take_profit_multiplier: float = 1.5,
         stop_loss_multiplier: float = 0.75,
+        leverage: int = 100,                     # ✅ 新增：用于P5杠杆计算
         min_hold_bars: int = 3,
         cooldown_bars: int = 10,
         bar_minutes: int = 5,
-        is_strong_threshold: float = 0.4,
+        is_strong_threshold: float = 0.6,        # ✅ 0.4 → 0.6（回测原始值）
     ):
         self.st_period = st_period
         self.st_multiplier = st_multiplier
@@ -144,8 +145,10 @@ class SuperTrendTemaStrategy(StrategyBase):
         self.fixed_take_profit = fixed_take_profit
         self.trend_weak_profit = trend_weak_profit
         self.st_change_profit = st_change_profit
+        self.big_take_profit = big_take_profit
         self.take_profit_multiplier = take_profit_multiplier
         self.stop_loss_multiplier = stop_loss_multiplier
+        self.leverage = leverage
         self.min_hold_bars = min_hold_bars
         self.cooldown_bars = cooldown_bars
         self.bar_minutes = bar_minutes
@@ -153,7 +156,6 @@ class SuperTrendTemaStrategy(StrategyBase):
 
         # 运行时状态
         self._indicators: Optional[Dict] = None
-        # 冷却用：上次平仓的时间戳（仅做诊断与冷却判断；策略实例需在引擎中保持单例）
         self._last_close_ts: Optional[pd.Timestamp] = None
 
     # ---------- 接口实现 ----------
@@ -470,7 +472,6 @@ class SuperTrendTemaStrategy(StrategyBase):
     # =====================================================
     # 平仓逻辑 - 9级优先级
     # =====================================================
-
     def _check_close_conditions(
         self,
         df: pd.DataFrame,
@@ -482,7 +483,7 @@ class SuperTrendTemaStrategy(StrategyBase):
         entry_index: Optional[int],
     ) -> SignalResult:
         """
-        检查平仓条件，按优先级从高到低
+        平仓条件，按优先级 P1~P9（与回测脚本完全对齐）
         """
         # 持仓K线数检查
         hold_bars = (idx - entry_index) if entry_index is not None else 999
@@ -498,14 +499,12 @@ class SuperTrendTemaStrategy(StrategyBase):
 
         price_move_loss = -pnl_ratio if pnl_ratio < 0 else 0
 
-        # 斜率和方向
         slopes = self._get_slopes(ind, idx)
         st_dir = ind["st_direction"].iloc[idx]
         prev_st_dir = ind["st_direction"].iloc[idx - 1] if idx > 0 else st_dir
 
         tema72_up = slopes["tema72"] > 0
         tema72_down = slopes["tema72"] <= 0
-        tema144_up = slopes["tema144"] > 0
 
         cur_t72 = ind["tema72"].iloc[idx]
         cur_t144 = ind["tema144"].iloc[idx]
@@ -514,15 +513,12 @@ class SuperTrendTemaStrategy(StrategyBase):
         prev_t144 = ind["tema144"].iloc[idx - 1]
         prev_t288 = ind["tema288"].iloc[idx - 1]
 
-        # TEMA交叉
         t144_cross_t288_down = (prev_t144 >= prev_t288 and cur_t144 < cur_t288)
         t144_cross_t288_up = (prev_t144 <= prev_t288 and cur_t144 > cur_t288)
 
-        # ST翻转
         st_to_bear = (prev_st_dir != -1 and st_dir == -1)
         st_to_bull = (prev_st_dir != 1 and st_dir == 1)
 
-        # ===== 诊断日志 =====
         logger.info(
             f"[ST+TEMA][平仓检查] 方向={'多' if position == 1 else '空'}, "
             f"持仓={hold_bars}根, pnl={pnl_ratio*100:+.3f}%, loss={price_move_loss*100:.3f}% | "
@@ -531,82 +527,104 @@ class SuperTrendTemaStrategy(StrategyBase):
         logger.info(
             f"[ST+TEMA][平仓检查] 斜率: t72={slopes['tema72']:.6f}, "
             f"t144={slopes['tema144']:.6f}, t288={slopes['tema288']:.6f} | "
-            f"TEMA: t72={cur_t72:.4f}, t144={cur_t144:.4f}, t288={cur_t288:.4f} (差={cur_t72 - cur_t288:.4f})"
-        )
-        logger.info(
-            f"[ST+TEMA][平仓检查] 交叉: t144↑t288={t144_cross_t288_up}, t144↓t288={t144_cross_t288_down}"
+            f"TEMA72-TEMA288差={cur_t72 - cur_t288:.4f}"
         )
 
         close_sig = SignalResult.CLOSE_LONG if position == 1 else SignalResult.CLOSE_SHORT
 
         # ===== 做多平仓 =====
         if position == 1:
+            # P1 止损
             if price_move_loss >= self.liquidation_ratio:
-                return SignalResult(close_sig, f"P1止损/强平 (跌幅{price_move_loss * 100:.2f}%)")
+                return SignalResult(close_sig, f"P1止损/强平 (跌幅{price_move_loss*100:.2f}%)")
 
-            if pnl_ratio >= self.fixed_take_profit:
-                return SignalResult(close_sig, f"P2固定止盈 (盈利{pnl_ratio * 100:.2f}%)")
+            # P2a 大止盈（无条件）
+            if pnl_ratio >= self.big_take_profit:
+                return SignalResult(close_sig, f"P2a大止盈目标 (盈利{pnl_ratio*100:.2f}%)")
 
-            if pnl_ratio >= self.trend_weak_profit and (tema72_down or st_dir == -1):
-                return SignalResult(close_sig,
-                                    f"P3趋势减弱止盈 (盈利{pnl_ratio * 100:.2f}%)")
+            # P2b 中等止盈 + 趋势转弱
+            if pnl_ratio >= self.fixed_take_profit and (tema72_down or st_dir == -1):
+                return SignalResult(close_sig, f"P2b止盈+趋势转弱 (盈利{pnl_ratio*100:.2f}%)")
 
+            # P3 趋势减弱止盈（双重AND）
+            if pnl_ratio >= self.trend_weak_profit and tema72_down and st_dir == -1:
+                return SignalResult(close_sig, f"P3趋势减弱止盈 (盈利{pnl_ratio*100:.2f}%)")
+
+            # P4 SuperTrend翻空止盈
             if pnl_ratio > self.st_change_profit and st_to_bear:
-                return SignalResult(close_sig, f"P4 SuperTrend翻空止盈 (盈利{pnl_ratio * 100:.2f}%)")
+                return SignalResult(close_sig, f"P4 ST翻空止盈 (盈利{pnl_ratio*100:.2f}%)")
 
+            # P5 TEMA72与ST反向
             if tema72_down and st_dir == -1:
-                if pnl_ratio >= self.liquidation_ratio * self.take_profit_multiplier:
+                if pnl_ratio * self.leverage >= self.liquidation_ratio * self.take_profit_multiplier:
                     return SignalResult(close_sig,
-                                        f"P5 TEMA72与ST反向盈利止盈 (盈利{pnl_ratio * 100:.2f}%)")
-                if price_move_loss >= self.liquidation_ratio * self.stop_loss_multiplier and pnl_ratio < -0.015:
+                                        f"P5 TEMA72与ST反向盈利止盈 (杠杆后{pnl_ratio*self.leverage*100:.2f}%)")
+                # 回测做多专用：1.2% 即止损 且 pnl<-0.8%
+                if price_move_loss >= 0.012 and pnl_ratio < -0.008:
                     return SignalResult(close_sig,
-                                        f"P5 TEMA72与ST反向止亏 (亏损{pnl_ratio * 100:.2f}%)")
+                                        f"P5 TEMA72与ST反向止亏 (亏损{pnl_ratio*100:.2f}%)")
 
-            if t144_cross_t288_down:
+            # P6 TEMA144下穿TEMA288 (仅微利或亏损)
+            if t144_cross_t288_down and pnl_ratio < 0.005:
                 return SignalResult(close_sig, "P6 TEMA144下穿TEMA288")
 
-            if (cur_t72 - cur_t288 <= -20) and cur_t72 <= prev_t72:
-                return SignalResult(close_sig, f"P7 TEMA康法则强反向 (差={cur_t72 - cur_t288:.2f})")
+            # P7 TEMA康法则强反向 (仅微利或亏损)
+            if (cur_t72 - cur_t288 <= -20) and cur_t72 <= prev_t72 and pnl_ratio < 0.005:
+                return SignalResult(close_sig, f"P7 TEMA康法则强反向 (差={cur_t72-cur_t288:.2f})")
 
-            if self._trend_reversal_confirmed(ind, idx, "down", min_bars=8):
-                return SignalResult(close_sig, "P8 大趋势反转(连续8根下降)")
+            # P8 大趋势反转(连续10根)
+            if self._trend_reversal_confirmed(ind, idx, "down", min_bars=10):
+                return SignalResult(close_sig, "P8 大趋势反转(连续10根下降)")
 
-            if self._three_line_downward(df, ind, idx, slopes["tema72"]):
+            # P9 三线同向下降 (仅微利或亏损)
+            if self._three_line_downward(df, ind, idx, slopes["tema72"]) and pnl_ratio < 0.005:
                 return SignalResult(close_sig, "P9 三线同向下降平仓")
 
         # ===== 做空平仓 =====
         elif position == -1:
+            # P1 止损
             if price_move_loss >= self.liquidation_ratio:
-                return SignalResult(close_sig, f"P1止损/强平 (涨幅{price_move_loss * 100:.2f}%)")
+                return SignalResult(close_sig, f"P1止损/强平 (涨幅{price_move_loss*100:.2f}%)")
 
-            if pnl_ratio >= self.fixed_take_profit:
-                return SignalResult(close_sig, f"P2固定止盈 (盈利{pnl_ratio * 100:.2f}%)")
+            # P2a 大止盈
+            if pnl_ratio >= self.big_take_profit:
+                return SignalResult(close_sig, f"P2a大止盈目标 (盈利{pnl_ratio*100:.2f}%)")
 
-            if pnl_ratio >= self.trend_weak_profit and (tema72_up or st_dir == 1):
-                return SignalResult(close_sig,
-                                    f"P3趋势减弱止盈 (盈利{pnl_ratio * 100:.2f}%)")
+            # P2b 中等止盈 + 趋势转弱
+            if pnl_ratio >= self.fixed_take_profit and (tema72_up or st_dir == 1):
+                return SignalResult(close_sig, f"P2b止盈+趋势转弱 (盈利{pnl_ratio*100:.2f}%)")
 
+            # P3 趋势减弱止盈（双重AND）
+            if pnl_ratio >= self.trend_weak_profit and tema72_up and st_dir == 1:
+                return SignalResult(close_sig, f"P3趋势减弱止盈 (盈利{pnl_ratio*100:.2f}%)")
+
+            # P4 SuperTrend翻多止盈
             if pnl_ratio > self.st_change_profit and st_to_bull:
-                return SignalResult(close_sig, f"P4 SuperTrend翻多止盈 (盈利{pnl_ratio * 100:.2f}%)")
+                return SignalResult(close_sig, f"P4 ST翻多止盈 (盈利{pnl_ratio*100:.2f}%)")
 
+            # P5 TEMA72与ST反向
             if tema72_up and st_dir == 1:
-                if pnl_ratio >= self.liquidation_ratio * self.take_profit_multiplier:
+                if pnl_ratio * self.leverage >= self.liquidation_ratio * self.take_profit_multiplier:
                     return SignalResult(close_sig,
-                                        f"P5 TEMA72与ST反向盈利止盈 (盈利{pnl_ratio * 100:.2f}%)")
+                                        f"P5 TEMA72与ST反向盈利止盈 (杠杆后{pnl_ratio*self.leverage*100:.2f}%)")
                 if price_move_loss >= self.liquidation_ratio * self.stop_loss_multiplier and pnl_ratio < -0.015:
                     return SignalResult(close_sig,
-                                        f"P5 TEMA72与ST反向止亏 (亏损{pnl_ratio * 100:.2f}%)")
+                                        f"P5 TEMA72与ST反向止亏 (亏损{pnl_ratio*100:.2f}%)")
 
-            if t144_cross_t288_up:
+            # P6 TEMA144上穿TEMA288 (仅微利或亏损)
+            if t144_cross_t288_up and pnl_ratio < 0.005:
                 return SignalResult(close_sig, "P6 TEMA144上穿TEMA288")
 
-            if (cur_t72 - cur_t288 >= 20) and cur_t72 >= prev_t72:
-                return SignalResult(close_sig, f"P7 TEMA康法则强反向 (差={cur_t72 - cur_t288:.2f})")
+            # P7 TEMA康法则强反向 (仅微利或亏损)
+            if (cur_t72 - cur_t288 >= 20) and cur_t72 >= prev_t72 and pnl_ratio < 0.005:
+                return SignalResult(close_sig, f"P7 TEMA康法则强反向 (差={cur_t72-cur_t288:.2f})")
 
-            if self._trend_reversal_confirmed(ind, idx, "up", min_bars=6):
-                return SignalResult(close_sig, "P8 大趋势反转(连续6根上升)")
+            # P8 大趋势反转(连续10根上升) ✅ 6 → 10
+            if self._trend_reversal_confirmed(ind, idx, "up", min_bars=10):
+                return SignalResult(close_sig, "P8 大趋势反转(连续10根上升)")
 
-            if self._three_line_upward(df, ind, idx, slopes["tema72"]):
+            # P9 三线同向上升 (仅微利或亏损)
+            if self._three_line_upward(df, ind, idx, slopes["tema72"]) and pnl_ratio < 0.005:
                 return SignalResult(close_sig, "P9 三线同向上升平仓")
 
         return SignalResult(SignalResult.NO_SIGNAL, "未触发平仓条件(P1~P9均未命中)")
@@ -711,25 +729,31 @@ class SuperTrendTemaStrategy(StrategyBase):
         long_reason = ""
         long_hits = []
 
-        # L1: 【修复 #3】TEMA144上穿TEMA288 （去掉 is_strong 强制）
-        if t144_x_t288_up:
+        # L1: TEMA144上穿TEMA288 + 强趋势 ✅ 恢复 is_strong
+        if t144_x_t288_up and is_strong:
             long_met, long_reason = True, "L1 TEMA144上穿TEMA288开多"
             long_hits.append("L1")
 
-        # L2: TEMA72上穿TEMA144 + TEMA144斜率向上 + ST多头
-        if t72_x_t144_up and slopes["tema144"] > HIGH and st_dir == 1:
+        # L2: TEMA72上穿TEMA144 ✅ 补齐回测的全部约束
+        if (t72_x_t144_up and
+                slopes["tema144"] > HIGH and
+                slopes["tema288"] > 0 and                       # 长周期向上
+                st_dir == 1 and
+                self._st_consistency(ind, idx, 1, min_bars=3) and  # ST稳定多头
+                bull_align and                                  # TEMA多头排列
+                is_strong):                                     # 强趋势
             long_met, long_reason = True, "L2 TEMA72上穿TEMA144开多"
             long_hits.append("L2")
 
-        # L3: 【修复 #3】强上升趋势中ST翻转 （去掉 is_strong 强制）
-        if st_to_bull and is_strong_up and bull_align:
+        # L3: 强上升趋势中ST翻转 ✅ 恢复 is_strong
+        if st_to_bull and is_strong_up and bull_align and is_strong:
             long_met, long_reason = True, "L3 强上升趋势中ST翻转开多"
             long_hits.append("L3")
 
-        # L4: 【修复 #3】大上升趋势 （去掉 is_strong 强制）
+        # L4: 大上升趋势 ✅ 恢复 is_strong
         if (is_big_trend and st_to_bull and st_dir == 1 and
                 slopes["tema144"] > BIG and slopes["tema72"] > BIG and
-                slopes["tema288"] > HIGH and bull_align):
+                slopes["tema288"] > HIGH and bull_align and is_strong):
             long_met, long_reason = True, "L4 大上升趋势中开多"
             long_hits.append("L4")
 

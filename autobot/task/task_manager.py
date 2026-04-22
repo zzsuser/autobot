@@ -249,19 +249,34 @@ class Task:
             )
 
     async def schedule_task(self):
-        """按 timeframe 周期循环调度"""
+        """按 timeframe 周期循环调度（对齐时钟整点）"""
         task_name = f"{self.exchange}-{self.symbol}-{self.method}"
         logger.info(f"任务开始: {task_name} ({self.timeframe}min)")
 
-        # 首次立即执行一次
-        await self.fetch_data()
+        tf_seconds = float(self.timeframe) * 60
+
+        # 首次启动：先睡到下一个 timeframe 整点（多睡 1 秒确保 K 线已收盘）
+        now_ts = time.time()
+        next_aligned = (int(now_ts // tf_seconds) + 1) * tf_seconds
+        first_sleep = next_aligned - now_ts + 1
+        logger.info(f"任务 {task_name} 首次对齐等待 {first_sleep:.1f}s 至下个 {self.timeframe}min 整点")
+        try:
+            await asyncio.sleep(first_sleep)
+        except asyncio.CancelledError:
+            logger.info(f"任务在对齐等待时被取消: {task_name}")
+            self.is_running = False
+            return
 
         try:
             while self.is_running:
                 start_time = time.perf_counter()
                 await self.fetch_data()
                 elapsed = time.perf_counter() - start_time
-                sleep_time = max(0, float(self.timeframe) * 60 - elapsed)
+
+                # 每次结束后重新对齐，避免漂移
+                now_ts = time.time()
+                next_aligned = (int(now_ts // tf_seconds) + 1) * tf_seconds
+                sleep_time = max(0.5, next_aligned - now_ts + 1)
                 logger.debug(
                     f"下次调度 {task_name}: elapsed={elapsed:.2f}s, sleep={sleep_time:.2f}s"
                 )
