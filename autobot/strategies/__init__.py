@@ -14,7 +14,7 @@ def register_all_strategies():
     """注册所有策略到全局注册器"""
 
     # SuperTrend + TEMA 复合策略（从回测代码提取）
-    from autobot.strategies.supertrend_tema_strategy import SuperTrendTemaStrategy
+    from autobot.strategies.supertrend_tema_strategy_v2 import SuperTrendTemaStrategy
     strategy_registry.register(SuperTrendTemaStrategy())
 
     # ZZS AI预测策略（需要模型文件）

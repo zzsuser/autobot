@@ -23,7 +23,8 @@ class DBReader:
             if self.connection and self.connection.open:
                 self.connection.ping(reconnect=True)
                 return True
-            self.connection = pymysql.connect(**DBConfig.to_dict())
+            self.connection = pymysql.connect(**DBConfig.to_dict(), autocommit=True)
+            #self.connection = pymysql.connect(**DBConfig.to_dict())
             return True
         except pymysql.Error as e:
             logger.error(f"数据库连接失败: {e}")
