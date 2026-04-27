@@ -352,10 +352,10 @@ class TradingEngine:
         )
 
         if result.get("success"):
-            position_val = 1 if direction == "long" else -1
             entry_index = len(df) - 1 if df is not None else None
             position_manager.save_position(
-                exchange, symbol, method, position_val, current_price, direction, entry_index
+                exchange, symbol, method, direction, current_price,   # direction="short"/"long"
+                entry_index=entry_index
             )
             return True, f"开{direction}成功 @ {current_price} (本金={live_balance:.2f})"
         else:
