@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 from typing import Optional, Dict, Tuple
 from autobot.core.strategy_base import StrategyBase, SignalResult
-from autobot.utils.logger import logger
+from autobot.utils.logger import logger, log_trade
 
 
 # =====================================================

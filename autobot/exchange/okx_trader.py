@@ -24,6 +24,17 @@ class OKXTrader:
         self.passphrase = OKXConfig.PASSPHRASE
         self.flag = OKXConfig.FLAG
 
+    @staticmethod
+    def _pos_side(pos_side: str) -> str:
+        """根据 POSITION_MODE 返回应传给 OKX 的 posSide。
+
+        - long_short_mode(双向持仓): 必须传 "long"/"short"
+        - net_mode(单向持仓): 不传 posSide，返回空字符串
+        """
+        if TradingConfig.POSITION_MODE == "net_mode":
+            return ""
+        return pos_side
+
     def _get_trade_api(self):
         return Trade.TradeAPI(self.api_key, self.secret_key, self.passphrase, False, self.flag)
 
@@ -65,6 +76,12 @@ class OKXTrader:
             logger.error(f"查询最小下单量失败: {e}")
         return 1.0
 
+    @staticmethod
+    def _fmt_sz(sz) -> str:
+        """把张数格式化为 OKX sz 字符串（lotSz=0.01，支持小数张，去掉尾零）"""
+        v = round(float(sz), 2)
+        return f"{v:.2f}".rstrip("0").rstrip(".") if v != int(v) else str(int(v))
+
     def get_contract_value(self, inst_id: str = None) -> float:
         """查询合约面值（每张代表多少币）"""
         inst_id = inst_id or TradingConfig.DEFAULT_INST_ID
@@ -76,6 +93,36 @@ class OKXTrader:
         except Exception as e:
             logger.error(f"查询合约面值失败: {e}")
         return TradingConfig.CONTRACT_SIZE
+
+    def get_tick_size(self, inst_id: str = None) -> float:
+        """查询合约价格最小变动单位(tickSz)，用于保护单价格定向取整"""
+        inst_id = inst_id or TradingConfig.DEFAULT_INST_ID
+        try:
+            public_api = self._get_public_api()
+            result = public_api.get_instruments(instType="SWAP", instId=inst_id)
+            if result["code"] == "0" and result["data"]:
+                return float(result["data"][0].get("tickSz", "0.01"))
+        except Exception as e:
+            logger.error(f"查询tickSz失败: {e}")
+        return 0.01
+
+    def validate_position_mode(self) -> bool:
+        """校验账户持仓模式与 POSITION_MODE 配置一致，不一致仅告警"""
+        try:
+            account_api = self._get_account_api()
+            result = account_api.get_account_config()
+            if result["code"] == "0" and result["data"]:
+                account_pos_mode = result["data"][0].get("posMode", "")
+                if account_pos_mode and account_pos_mode != TradingConfig.POSITION_MODE:
+                    logger.warning(
+                        f"⚠️ 账户持仓模式({account_pos_mode}) 与配置 POSITION_MODE"
+                        f"({TradingConfig.POSITION_MODE}) 不一致，下单可能被拒"
+                    )
+                    return False
+                return True
+        except Exception as e:
+            logger.error(f"校验持仓模式失败: {e}")
+        return True
 
     # ==================== 保证金模式设置 ====================
 
@@ -184,7 +231,7 @@ class OKXTrader:
         total_value = use_amount * leverage
         qty = total_value / current_price
         #contracts = round(qty / contract_size, 2)
-        min_size = int(self.get_min_size(inst_id))
+        min_size = float(self.get_min_size(inst_id))
         raw_contracts = qty / contract_size
         contracts = max(math.ceil(raw_contracts) if raw_contracts >= 0.01 else 0, min_size)
 
@@ -280,6 +327,44 @@ class OKXTrader:
 
     # ==================== 平仓 ====================
 
+    def open_market_size(
+        self,
+        inst_id: str,
+        side: str,
+        pos_side: str,
+        sz: float,
+        leverage: int = None,
+        margin_mode: str = None,
+    ) -> dict:
+        """
+        按指定张数市价开仓（R2 F3 下一开盘入场 / 触发成交兜底时用）。
+
+        R2 的张数由策略 calculate_order_size 计算（含 notional 上限/step 取整），
+        不走 open_position 的仓位百分比算法，因此这里提供"指定 sz"的入口。
+        """
+        leverage = leverage or TradingConfig.DEFAULT_LEVERAGE
+        margin_mode = margin_mode or TradingConfig.MARGIN_MODE
+        sz = round(float(sz), 2)
+        if sz < 0.01:
+            return {"success": False, "message": f"张数过小: {sz}", "contracts": 0}
+        try:
+            self.set_leverage(leverage=leverage, margin_mode=margin_mode, inst_id=inst_id)
+            trade_api = self._get_trade_api()
+            result = trade_api.place_order(
+                instId=inst_id,
+                tdMode=margin_mode,
+                side=side,
+                posSide=self._pos_side(pos_side),
+                ordType="market",
+                sz=self._fmt_sz(sz),
+            )
+            if result["code"] == "0":
+                logger.info(f"市价开仓成功: {inst_id} {side}/{pos_side} {sz}张 mode={margin_mode}")
+                return {"success": True, "message": f"开仓成功: {sz}张", "contracts": sz}
+            return {"success": False, "message": f"开仓失败: {result.get('msg','')}", "contracts": 0}
+        except Exception as e:
+            return {"success": False, "message": f"开仓异常: {e}", "contracts": 0}
+
     def close_position(
         self,
         pos_side: str = "net",
@@ -366,6 +451,200 @@ class OKXTrader:
             logger.error(f"获取持仓详情失败: {e}")
         return result
 
+    # ==================== 保护单（TP/SL 条件单） ====================
+
+    def place_stop_entry_order(
+        self,
+        inst_id: str,
+        side: str,
+        pos_side: str,
+        sz: float,
+        trigger_price: float,
+        margin_mode: str = None,
+        algo_cl_ord_id: str = "",
+    ) -> dict:
+        """
+        挂"条件触发开仓单"（R2 四形态 F1/F2/F4 入场意图）。
+
+        OKX conditional 单: 价格触及 trigger 后按市价提交 side/sz 的委托，
+        reduceOnly=false → 用于【开仓】而非平仓。
+
+        Args:
+            side: "buy"(向上突破开多) / "sell"(向下突破开空)
+            pos_side: "long" / "short" / "net"
+            sz: 张数（已按策略口径取整）
+            trigger_price: 触发价（buy 需高于现价，sell 需低于现价——OKX conditional 校验）
+            margin_mode: "cross" / "isolated"
+            algo_cl_ord_id: 确定性 clientOrderId（幂等防重复）
+
+        Returns:
+            {"success": bool, "algo_id": str, "data": ..., "message": str}
+
+        NOTE(2026-09-03 实盘探针): OKX conditional 的入场触发统一用 slTriggerPx。
+        - side=buy : slTriggerPx 必须【高于】现价（向上突破开多，类似 buy-stop）
+        - side=sell: slTriggerPx 必须【低于】现价（向下突破开空，类似 sell-stop）
+        tpTriggerPx 是镜像语义（buy 只允许 ≤ 现价），不可用于向上触发开多（code 51277）。
+        """
+        margin_mode = margin_mode or TradingConfig.MARGIN_MODE
+        try:
+            trade_api = self._get_trade_api()
+            result = trade_api.place_algo_order(
+                instId=inst_id,
+                tdMode=margin_mode,
+                side=side,
+                posSide=self._pos_side(pos_side),
+                ordType="conditional",
+                sz=self._fmt_sz(sz),
+                reduceOnly="false",
+                slTriggerPx=str(trigger_price),
+                slOrdPx="-1",  # 触发后市价开仓
+                slTriggerPxType=TradingConfig.TP_SL_TRIGGER_TYPE,
+                algoClOrdId=algo_cl_ord_id,
+            )
+            if result["code"] == "0":
+                algo_id = ""
+                data = result.get("data") or []
+                if data:
+                    algo_id = data[0].get("algoId", "")
+                logger.info(
+                    f"挂条件开仓单成功: {inst_id} {side}/{pos_side} sz={sz} "
+                    f"trigger={trigger_price} algoId={algo_id}"
+                )
+                return {"success": True, "algo_id": algo_id, "data": result}
+            logger.error(f"挂条件开仓单失败: {result}")
+            return {"success": False, "message": result.get("msg", ""), "data": result}
+        except Exception as e:
+            logger.error(f"挂条件开仓单异常: {e}")
+            return {"success": False, "message": f"挂条件开仓单异常: {e}"}
+
+    def place_protective_orders(
+        self,
+        inst_id: str,
+        direction: str,
+        size: float,
+        tp_price: float,
+        sl_price: float,
+        margin_mode: str = None,
+        algo_cl_ord_id: str = "",
+    ) -> dict:
+        """
+        挂 OCO 保护单（TP/SL 条件单，真正挂单而非软件平仓）。
+
+        Args:
+            inst_id: 合约ID
+            direction: 持仓方向 "long" / "short"
+            size: 需保护的全部仓位张数
+            tp_price: 止盈触发价（已按 tick 定向取整）
+            sl_price: 止损触发价（已按 tick 定向取整）
+            margin_mode: "cross" / "isolated"
+            algo_cl_ord_id: 确定性 clientOrderId（幂等防重复）
+
+        Returns:
+            {"success": bool, "algo_id": str, "data": ..., "message": str}
+        """
+        margin_mode = margin_mode or TradingConfig.MARGIN_MODE
+        side = "sell" if direction == "long" else "buy"  # 平仓方向
+        pos_side = self._pos_side(direction)
+
+        try:
+            trade_api = self._get_trade_api()
+            result = trade_api.place_algo_order(
+                instId=inst_id,
+                tdMode=margin_mode,
+                side=side,
+                posSide=pos_side,
+                ordType="oco",
+                sz=self._fmt_sz(size),
+                reduceOnly="true",
+                tpTriggerPx=str(tp_price),
+                tpOrdPx="-1",  # 市价平仓
+                slTriggerPx=str(sl_price),
+                slOrdPx="-1",
+                tpTriggerPxType=TradingConfig.TP_SL_TRIGGER_TYPE,
+                slTriggerPxType=TradingConfig.TP_SL_TRIGGER_TYPE,
+                algoClOrdId=algo_cl_ord_id,
+            )
+            if result["code"] == "0":
+                algo_id = ""
+                data = result.get("data") or []
+                if data:
+                    algo_id = data[0].get("algoId", "")
+                logger.info(
+                    f"挂保护单成功: {inst_id} {direction} sz={size} "
+                    f"tp={tp_price} sl={sl_price} algoId={algo_id}"
+                )
+                return {"success": True, "algo_id": algo_id, "data": result}
+            logger.error(f"挂保护单失败: {result}")
+            return {"success": False, "message": result.get("msg", ""), "data": result}
+        except Exception as e:
+            logger.error(f"挂保护单异常: {e}")
+            return {"success": False, "message": f"挂保护单异常: {e}"}
+
+    def amend_protective_orders(
+        self,
+        inst_id: str,
+        algo_id: str,
+        new_size: float,
+        new_tp: float,
+        new_sl: float,
+    ) -> dict:
+        """加仓后修改保护单：更新覆盖数量与 TP/SL 价格（基于新均价）"""
+        try:
+            trade_api = self._get_trade_api()
+            result = trade_api.amend_algo_order(
+                instId=inst_id,
+                algoId=algo_id,
+                newSz=self._fmt_sz(new_size),
+                newTpTriggerPx=str(new_tp),
+                newSlTriggerPx=str(new_sl),
+                newTpTriggerPxType=TradingConfig.TP_SL_TRIGGER_TYPE,
+                newSlTriggerPxType=TradingConfig.TP_SL_TRIGGER_TYPE,
+            )
+            if result["code"] == "0":
+                logger.info(
+                    f"改保护单成功: {inst_id} algoId={algo_id} "
+                    f"sz={new_size} tp={new_tp} sl={new_sl}"
+                )
+                return {"success": True, "data": result}
+            logger.error(f"改保护单失败: {result}")
+            return {"success": False, "message": result.get("msg", ""), "data": result}
+        except Exception as e:
+            logger.error(f"改保护单异常: {e}")
+            return {"success": False, "message": f"改保护单异常: {e}"}
+
+    def cancel_protective_orders(
+        self, inst_id: str, algo_id: str = "", algo_cl_ord_id: str = ""
+    ) -> dict:
+        """撤销保护单（反手/平仓前调用）"""
+        try:
+            trade_api = self._get_trade_api()
+            item = {"instId": inst_id}
+            if algo_id:
+                item["algoId"] = algo_id
+            if algo_cl_ord_id:
+                item["algoClOrdId"] = algo_cl_ord_id
+            result = trade_api.cancel_algo_order([item])
+            if result["code"] == "0":
+                logger.info(f"撤保护单成功: {inst_id} {item}")
+                return {"success": True, "data": result}
+            logger.error(f"撤保护单失败: {result}")
+            return {"success": False, "message": result.get("msg", ""), "data": result}
+        except Exception as e:
+            logger.error(f"撤保护单异常: {e}")
+            return {"success": False, "message": f"撤保护单异常: {e}"}
+
+    def get_algo_orders(self, inst_id: str, ord_type: str = "oco") -> dict:
+        """查询未完成的条件单（用于核对保护单是否覆盖仓位）"""
+        try:
+            trade_api = self._get_trade_api()
+            result = trade_api.order_algos_list(instId=inst_id, ordType=ord_type)
+            if result["code"] == "0":
+                return {"success": True, "data": result.get("data", [])}
+            return {"success": False, "message": result.get("msg", ""), "data": []}
+        except Exception as e:
+            logger.error(f"查询条件单异常: {e}")
+            return {"success": False, "message": f"查询条件单异常: {e}", "data": []}
+
     # ==================== 爆仓风险检测 ====================
 
     def check_liquidation_risk(self, inst_id: str = None) -> dict:
@@ -441,6 +720,18 @@ class OKXTrader:
                         return float(detail["availBal"])
         except Exception as e:
             logger.error(f"获取USDT余额失败: {e}")
+        return 0.0
+
+    def get_usdt_equity(self) -> float:
+        """获取 USDT 可用权益（availEq = 可用余额 + 可用保证金，R2 资金口径用）"""
+        try:
+            result = self.get_balance()
+            if result.get("code") == "0":
+                for detail in result["data"][0]["details"]:
+                    if detail["ccy"] == "USDT":
+                        return float(detail.get("availEq") or detail["availBal"])
+        except Exception as e:
+            logger.error(f"获取USDT可用权益失败: {e}")
         return 0.0
 
     def update_balance(self, target_amount: float, tolerance: float = 0.01):

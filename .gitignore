@@ -1,0 +1,23 @@
+# 密钥与本地配置（绝不入库）
+.passwd
+.passwd.bak_*
+*.bak_*
+
+# Python 缓存/构建产物
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# 日志与运行时数据
+logs/
+*.log
+log
+dump.rdb
+recalc_progress.json
+
+# 编辑器/系统
+.DS_Store
+*.swp
+.idea/
+.vscode/

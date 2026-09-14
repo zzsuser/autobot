@@ -129,6 +129,24 @@ class TradingConfig:
     # 爆仓联动减仓比例 (当 LIQUIDATION_ACTION="reduce" 时生效)
     LIQUIDATION_REDUCE_RATIO = float(os.getenv("LIQUIDATION_REDUCE_RATIO", "0.5"))
 
+    # ===== R16 执行层新增配置项 =====
+
+    # 持仓模式: "long_short_mode"=双向持仓(需配合 posSide), "net_mode"=单向持仓
+    # 与 OKX 账户级 posMode 取值一致；后续策略可切换
+    POSITION_MODE = os.getenv("POSITION_MODE", "long_short_mode")
+
+    # 保护单(TP/SL)触发价类型: "last"=最新价, "mark"=标记价, "index"=指数价
+    TP_SL_TRIGGER_TYPE = os.getenv("TP_SL_TRIGGER_TYPE", "last")
+
+    # 保护单挂单超时(秒)，超过未确认则按 PROTECTION_FAIL_ACTION 处理
+    PROTECTION_TIMEOUT_SECONDS = float(os.getenv("PROTECTION_TIMEOUT_SECONDS", "2"))
+
+    # 保护单失败处置: "close_position"=立即平仓, "halt"=停止新开仓
+    PROTECTION_FAIL_ACTION = os.getenv("PROTECTION_FAIL_ACTION", "close_position")
+
+    # 同方向最多入场次数（R16 冻结为 3，engine 读取此值判断加仓上限）
+    MAX_SAME_DIRECTION_ENTRIES = int(os.getenv("MAX_SAME_DIRECTION_ENTRIES", "3"))
+
 class ServerConfig:
     HOST = os.getenv("SERVER_HOST", "0.0.0.0")
     PORT = int(os.getenv("SERVER_PORT", "9002"))

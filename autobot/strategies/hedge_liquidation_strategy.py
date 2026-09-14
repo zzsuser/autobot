@@ -11,7 +11,7 @@
 import pandas as pd
 from typing import Optional
 from autobot.core.strategy_base import StrategyBase, SignalResult, MultiSignalResult
-from autobot.utils.logger import logger
+from autobot.utils.logger import logger, log_trade
 
 
 class HedgeLiquidationStrategy(StrategyBase):
